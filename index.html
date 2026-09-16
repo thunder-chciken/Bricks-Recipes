@@ -5979,7 +5979,7 @@ function buildDoc(){
   ENTRANCE(doc.content,state.anim);
   if(state.layout==='v')VERTICALIZE(doc.content);
   APPLYWIDTH(doc.content,state.width);
-  return doc;
+  return ROOTSAFE(doc);
 }
 /* ---------- entrance animations ----------
    Written as native Bricks interactions (enterView -> startAnimation) so they carry over on paste and
@@ -6014,6 +6014,37 @@ function docFor(id,v,opts){
   var doc=GENS[id](v||'default',opts||{accent:PALACCENT(),radius:PALRADIUS()});
   DECORATE(id,doc);
   ENTRANCE(doc.content,ANIMFOR(id,doc));
+  return ROOTSAFE(doc);
+}
+/* ---------- %root%-free custom CSS ----------
+   Field-confirmed on Bricks 2.3.2 (test.rockhousegraphics.com): pasted element Custom CSS was
+   printed with %root% left literal, so every rule matched nothing (flip cards never flipped,
+   marquees never moved). Before copy, each element whose Custom CSS uses %root% gets its own
+   class (stored in _hidden._cssClasses, which survives paste and ID regeneration) and %root%
+   becomes :is(.cls,#cls). :is() takes the specificity of its most specific argument, so the rule
+   keeps the ID-level specificity %root% would have had and still beats the element's own
+   settings. Global-class Custom CSS gets the class name itself. Idempotent. */
+function ROOTFIX(payload){
+  if(!payload||!payload.content)return payload;
+  var used={};
+  function token(){var t;do{t='bpr-'+(Math.random().toString(36).slice(2,8)+'000000').slice(0,6)}while(used[t]);used[t]=1;return t}
+  payload.content.forEach(function(e){
+    var st=e.settings;if(!st||Array.isArray(st))return;
+    var keys=Object.keys(st).filter(function(k){return k.indexOf('_cssCustom')===0&&typeof st[k]==='string'&&st[k].indexOf('%root%')>-1});
+    if(!keys.length)return;
+    var cls=token(),sel=':is(.'+cls+',#'+cls+')';
+    keys.forEach(function(k){st[k]=st[k].split('%root%').join(sel)});
+    st._hidden=st._hidden||{};
+    st._hidden._cssClasses=st._hidden._cssClasses?st._hidden._cssClasses+' '+cls:cls;
+  });
+  (payload.globalClasses||[]).forEach(function(g){
+    var st=g.settings;if(!st||Array.isArray(st)||!g.name)return;
+    Object.keys(st).forEach(function(k){if(k.indexOf('_cssCustom')===0&&typeof st[k]==='string')st[k]=st[k].split('%root%').join('.'+g.name)});
+  });
+  return payload;
+}
+function ROOTSAFE(doc){
+  if(doc&&doc.json&&!doc.__rootsafe){var j=doc.json;doc.json=function(){return ROOTFIX(j.apply(this,arguments))};doc.__rootsafe=1}
   return doc;
 }
 function PALACCENT(){var p=activePreset();return p?p.accent:'#5b8cff'}
