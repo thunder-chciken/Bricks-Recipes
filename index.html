@@ -293,6 +293,10 @@ button.x:hover{color:#fff;border-color:var(--ac);transform:rotate(90deg)}
 .titem .mv:hover{color:var(--ac2)}
 .tray-foot{padding:11px 13px;border-top:1px solid var(--line);display:flex;gap:8px}
 .tray-foot .pbtn{flex:1;height:38px}
+.sclist{display:flex;flex-direction:column;gap:6px}
+.sclist .titem{cursor:pointer;padding:10px 11px}
+.sclist .titem:hover{border-color:var(--ac)}
+.titem .mv:disabled{opacity:.25;pointer-events:none}
 .titem .num{width:20px;height:20px;border-radius:6px;background:var(--panel2);color:var(--mut);font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .titem select{background:var(--ink);color:var(--mut);border:1px solid var(--line2);border-radius:6px;font:600 11px var(--sans);height:24px;max-width:96px}
 .tray-foot.col{flex-direction:column}.tray-foot .rowb{display:flex;gap:8px}
@@ -376,15 +380,6 @@ button.x:hover{color:#fff;border-color:var(--ac);transform:rotate(90deg)}
     <div id="cats"></div>
     <div class="nores" id="nores"><b>No recipes match</b>Try a different search term.</div>
   </main>
-</div>
-
-<div class="tray" id="tray">
-  <div class="tray-top">🧩 Section Creator <button class="x" id="trayX" style="margin-left:auto">✕</button></div>
-  <div class="tray-list" id="trayList"></div>
-  <div class="tray-foot col">
-    <button class="pbtn" id="trayCopy">📋 Copy all as one</button>
-    <div class="rowb"><button class="pbtn ghost" id="trayPreview" style="flex:1">👁 Preview</button><button class="pbtn ghost" id="trayClear" style="flex:1">Clear</button></div>
-  </div>
 </div>
 
 <div class="cmd-ovl" id="cmdOvl"><div class="cmd">
@@ -6041,10 +6036,10 @@ function doCopy(){
   }
 }
 
-function closeSheet(){ovl.classList.remove('open');document.body.style.overflow='';state=null}
+function closeSheet(){ovl.classList.remove('open');document.body.style.overflow='';state=null;creatorOpen=false}
 ovl.addEventListener('click',function(e){if(e.target===ovl)closeSheet()});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'&&ovl.classList.contains('open'))closeSheet()});
-window.addEventListener('resize',function(){if(state)renderVP()});
+window.addEventListener('resize',function(){if(state)renderVP();else if(creatorOpen)drawCreator()});
 
 
 /* ================= PANELS ================= */
@@ -6279,10 +6274,10 @@ function openSchema(r){
 }
 
 /* ---------- Section Creator ----------
-   Stack sections from any recipes, reorder them, pick variants, preview the
-   result and copy it as one bricksCopiedElements payload. (Storage key stays
-   'cart' so existing saved workspaces keep working.) */
-var tray=document.getElementById('tray');
+   Stack sections from any recipes, reorder them, pick variants and see the
+   combined result live, then copy it as one bricksCopiedElements payload.
+   (Storage key stays 'cart' so existing saved workspaces keep working.) */
+var creatorOpen=false,creatorDev='desktop';
 
 function SCBTN(id){
   var on=inCart(id);
@@ -6301,8 +6296,9 @@ function SCTOGGLE(id,v){
 /* Combine several recipe payloads into one. Unlike KITMERGE this works on the
    final json(): global classes/elements are kept, verbatim captures keep their
    element IDs, and IDs are only rewritten on a real collision, in which case
-   #brxe-<old> references inside that section's custom CSS are rewritten too. */
-function SCCOMBINE(items){
+   #brxe-<old> references inside that section's custom CSS are rewritten too.
+   Optional roots[] receives each section's top-level element IDs (preview only). */
+function SCCOMBINE(items,roots){
   var out={content:[],source:'bricksCopiedElements',sourceUrl:'',version:'2.3.6',globalClasses:[],globalElements:[]};
   var used={},gcIds={},geIds={};
   function fresh(){var s;do{s='b'+(Math.random().toString(36).slice(2,7)+'00000').slice(0,5)}while(used[s]);return s}
@@ -6313,7 +6309,7 @@ function SCCOMBINE(items){
     var map={};
     j.content.forEach(function(e){if(used[e.id])map[e.id]=fresh()});
     j.content.forEach(function(e){used[map[e.id]||e.id]=1});
-    var olds=Object.keys(map);
+    var olds=Object.keys(map),top=[];
     function remap(v){
       if(typeof v==='string'){
         if(map[v])return map[v];
@@ -6327,8 +6323,10 @@ function SCCOMBINE(items){
         children:(e.children||[]).map(function(c){return map[c]||c}),settings:olds.length?remap(e.settings||{}):(e.settings||{})};
       if(e.label)n.label=e.label;
       if(e.themeStyles)n.themeStyles=e.themeStyles;
+      if(!n.parent)top.push(n.id);
       out.content.push(n);
     });
+    if(roots)roots.push(top);
     (j.globalClasses||[]).forEach(function(g){if(!gcIds[g.id]){gcIds[g.id]=1;out.globalClasses.push(g)}});
     (j.globalElements||[]).forEach(function(g){var k=g.id||JSON.stringify(g);if(!geIds[k]){geIds[k]=1;out.globalElements.push(g)}});
     if(!out.sourceUrl&&j.sourceUrl)out.sourceUrl=j.sourceUrl;
@@ -6339,67 +6337,122 @@ function SCCOMBINE(items){
 }
 
 function renderCart(){
+  document.getElementById('tbCartN').textContent=cart().length;
+  if(creatorOpen)drawCreator();
+}
+
+function openCreator(){
+  state=null;creatorOpen=true;
+  sheet.innerHTML=
+    '<div class="sheet-top"><div><h3>🧩 Section Creator</h3><div class="blurb" id="scSub"></div></div>'+
+      '<button class="x" id="scX" aria-label="Close">✕</button></div>'+
+    '<div class="sheet-grid">'+
+      '<div class="pv-side">'+
+        '<div class="pv-bar"><div class="devseg" id="scDev">'+
+          Object.keys(DEV).map(function(d){return '<button data-d="'+d+'"'+(d===creatorDev?' class="on"':'')+'>'+DEV[d].glyph+' '+DEV[d].label+'</button>'}).join('')+
+          '<button data-d="all"'+(creatorDev==='all'?' class="on"':'')+'>▦ All 3</button>'+
+        '</div><span class="dim" id="scDim"></span></div>'+
+        '<div class="viewport" id="scVp"></div>'+
+        '<div class="pv-cap">Combined preview · exactly what “Copy all as one” pastes · click a section to jump to it</div>'+
+      '</div>'+
+      '<div class="opt-side">'+
+        '<button class="copybtn" id="scCopy">📋 Copy all as one</button>'+
+        '<div class="opt-block"><h5>Sections, top to bottom</h5><div class="sclist" id="scList"></div></div>'+
+        '<button class="pbtn ghost" id="scClear">Clear all</button>'+
+        '<div class="hint">Add more with <b>＋ Section Creator</b> on any recipe card. Reorder with the arrows; switch variants from the dropdown.</div>'+
+      '</div>'+
+    '</div>';
+  ovl.classList.add('open');document.body.style.overflow='hidden';
+  document.getElementById('scX').addEventListener('click',closeSheet);
+  document.getElementById('scDev').addEventListener('click',function(e){
+    var b=e.target.closest('button[data-d]');if(!b)return;creatorDev=b.dataset.d;
+    this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});drawCreator();
+  });
+  var list=document.getElementById('scList');
+  list.addEventListener('click',function(e){
+    var row=e.target.closest('.titem');if(!row)return;
+    var b=e.target.closest('button[data-act]'),id=row.dataset.id;
+    if(b){
+      if(b.dataset.act==='rm')cartDel(id);else cartMove(id,b.dataset.act==='up'?-1:1);
+      renderCart();refreshCardTools();return;
+    }
+    if(e.target.closest('select'))return;
+    jumpTo(cart().map(function(it){return it.id}).indexOf(id));
+  });
+  list.addEventListener('change',function(e){
+    if(e.target.dataset.act!=='v')return;
+    var id=e.target.closest('.titem').dataset.id;
+    STORE.set('cart',cart().map(function(it){return it.id===id?{id:it.id,v:e.target.value}:it}));
+    drawCreator();
+  });
+  document.getElementById('scCopy').addEventListener('click',function(){
+    var btn=this,c=cart(),label='📋 Copy all as one';
+    if(!c.length)return;
+    try{
+      navigator.clipboard.writeText(JSON.stringify(SCCOMBINE(c))).then(function(){
+        btn.textContent='✓ Copied '+c.length+' section'+(c.length>1?'s':'')+' — paste in Bricks';btn.classList.add('ok');
+        setTimeout(function(){btn.textContent=label;btn.classList.remove('ok')},2400);
+      },function(){btn.textContent='✕ Clipboard blocked';btn.classList.add('err');setTimeout(function(){btn.textContent=label;btn.classList.remove('err')},2200)});
+    }catch(err){btn.textContent='✕ '+err.message;btn.classList.add('err');setTimeout(function(){btn.textContent=label;btn.classList.remove('err')},2600)}
+  });
+  document.getElementById('scClear').addEventListener('click',function(){STORE.set('cart',[]);renderCart();refreshCardTools()});
+  requestAnimationFrame(drawCreator);
+}
+
+var scRoots=[];
+function drawCreator(){
+  var vp=document.getElementById('scVp');
+  if(!vp){creatorOpen=false;return}
   var c=cart();
-  document.getElementById('tbCartN').textContent=c.length;
-  document.getElementById('trayList').innerHTML=c.length?c.map(function(it,i){
+  document.getElementById('scSub').textContent=c.length?c.length+' section'+(c.length>1?'s':'')+' combined into one paste':'No sections yet';
+  document.getElementById('scDim').textContent=creatorDev==='all'?'1200 · 768 · 390px':DEV[creatorDev].w+'px';
+  document.getElementById('scCopy').disabled=!c.length;
+  document.getElementById('scClear').disabled=!c.length;
+  document.getElementById('scList').innerHTML=c.length?c.map(function(it,i){
     var r=BYID[it.id],m=RMETA[it.id],vs=(m&&m.variants)||[];
     var sel=vs.length>1?'<select data-act="v" title="Variant">'+vs.map(function(x){
       return '<option value="'+x.v+'"'+(x.v===it.v?' selected':'')+'>'+x.t+'</option>'}).join('')+'</select>':'';
-    return '<div class="titem" data-id="'+it.id+'"><span class="num">'+(i+1)+'</span><span class="nm" title="'+(r?r.name:it.id)+'">'+(r?r.name:it.id)+'</span>'+sel+
-      '<button class="mv" data-act="up" title="Move up">↑</button><button class="mv" data-act="dn" title="Move down">↓</button>'+
+    return '<div class="titem" data-id="'+it.id+'" title="Jump to this section in the preview"><span class="num">'+(i+1)+'</span>'+
+      '<span class="nm">'+(r?r.name:it.id)+'</span>'+sel+
+      '<button class="mv" data-act="up" title="Move up"'+(i===0?' disabled':'')+'>↑</button>'+
+      '<button class="mv" data-act="dn" title="Move down"'+(i===c.length-1?' disabled':'')+'>↓</button>'+
       '<button class="mv" data-act="rm" title="Remove">✕</button></div>'}).join(''):
-    '<div class="trayempty">Click <b>＋ Section Creator</b> on any recipe to stack sections here. Reorder them, preview, then copy everything as one paste.</div>';
-  ['trayCopy','trayPreview','trayClear'].forEach(function(b){document.getElementById(b).disabled=!c.length});
-}
-document.getElementById('trayList').addEventListener('click',function(e){
-  var b=e.target.closest('button[data-act]');if(!b)return;
-  var id=b.closest('.titem').dataset.id,a=b.dataset.act;
-  if(a==='rm')cartDel(id);else cartMove(id,a==='up'?-1:1);
-  renderCart();refreshCardTools();
-});
-document.getElementById('trayList').addEventListener('change',function(e){
-  if(e.target.dataset.act!=='v')return;
-  var id=e.target.closest('.titem').dataset.id;
-  STORE.set('cart',cart().map(function(it){return it.id===id?{id:it.id,v:e.target.value}:it}));
-});
-document.getElementById('tbCart').addEventListener('click',function(){tray.classList.toggle('open');renderCart()});
-document.getElementById('trayX').addEventListener('click',function(){tray.classList.remove('open')});
-document.getElementById('trayClear').addEventListener('click',function(){STORE.set('cart',[]);renderCart();refreshCardTools()});
-document.getElementById('trayCopy').addEventListener('click',function(){
-  var btn=this,c=cart(),label='📋 Copy all as one';
-  if(!c.length)return;
-  try{
-    navigator.clipboard.writeText(JSON.stringify(SCCOMBINE(c))).then(function(){
-      btn.textContent='✓ Copied '+c.length+' section'+(c.length>1?'s':'')+' — paste in Bricks';
-      setTimeout(function(){btn.textContent=label},2400);
-    },function(){btn.textContent='✕ Clipboard blocked';setTimeout(function(){btn.textContent=label},2200)});
-  }catch(err){btn.textContent='✕ '+err.message;setTimeout(function(){btn.textContent=label},2600)}
-});
-document.getElementById('trayPreview').addEventListener('click',function(){
-  var c=cart();if(!c.length)return;
-  var dev='desktop';
-  openPanel('🧩 Section Creator preview',c.length+' section'+(c.length>1?'s':'')+' combined, in order — exactly what “Copy all as one” pastes.',
-    '<div class="pv-bar"><div class="devseg" id="scDev">'+Object.keys(DEV).map(function(d){
-      return '<button data-d="'+d+'"'+(d===dev?' class="on"':'')+'>'+DEV[d].glyph+' '+DEV[d].label+'</button>'}).join('')+'</div>'+
-    '<button class="pbtn" id="scCopy" style="margin-left:auto;height:36px">📋 Copy all as one</button></div>'+
-    '<div class="viewport" id="scVp"><div class="vp-in" id="scIn"></div></div>');
-  function draw(){
-    var box=document.getElementById('scVp'),host=document.getElementById('scIn');if(!box)return;
-    try{
-      var j=SCCOMBINE(cart());
-      var content=JSON.parse(JSON.stringify(j.content));
-      RESOLVEGC(content,j.globalClasses);APPLYBP(content,dev);
-      PVFRAME(host,box,content,PALACCENT(),DEV[dev].w,Math.round(window.innerHeight*0.66),160);
-    }catch(err){host.style.transform='none';host.innerHTML='<div style="padding:20px;color:#b91c1c;font:600 13px var(--sans)">Preview error: '+err.message+'</div>'}
+    '<div class="trayempty">Nothing here yet. Close this window and click <b>＋ Section Creator</b> on any recipe card.</div>';
+  vp.style.border='';vp.style.background='';vp.style.overflowY='hidden';
+  if(!c.length){
+    vp.style.height='220px';vp.style.background='var(--panel)';
+    vp.innerHTML='<div class="trayempty" style="padding-top:80px">Your combined sections will appear here.</div>';
+    return;
   }
-  document.getElementById('scDev').addEventListener('click',function(e){
-    var b=e.target.closest('button[data-d]');if(!b)return;dev=b.dataset.d;
-    this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});draw();
+  var j;
+  try{scRoots=[];j=SCCOMBINE(c,scRoots)}
+  catch(err){vp.style.height='120px';vp.innerHTML='<div style="padding:20px;color:#b91c1c;font:600 13px var(--sans)">Preview error: '+err.message+'</div>';return}
+  var base=JSON.parse(JSON.stringify(j.content));
+  RESOLVEGC(base,j.globalClasses);
+  if(creatorDev!=='all'){
+    vp.innerHTML='<div class="vp-in" id="scIn"></div>';
+    var content=JSON.parse(JSON.stringify(base));APPLYBP(content,creatorDev);
+    PVFRAME(document.getElementById('scIn'),vp,content,PALACCENT(),DEV[creatorDev].w,Math.round(window.innerHeight*0.66),160);
+    return;
+  }
+  vp.style.height='auto';vp.style.overflowY='visible';vp.style.background='transparent';vp.style.border='0';
+  vp.innerHTML='<div class="trip">'+['desktop','tablet','mobile'].map(function(d){
+    return '<div class="tripcol"><div class="lbl">'+DEV[d].label+' · '+DEV[d].w+'px</div>'+
+      '<div class="frame" id="sctf-'+d+'"><div class="vp-in2" id="scti-'+d+'"></div></div></div>'}).join('')+'</div>';
+  ['desktop','tablet','mobile'].forEach(function(d){
+    var cc=JSON.parse(JSON.stringify(base));APPLYBP(cc,d);
+    PVFRAME(document.getElementById('scti-'+d),document.getElementById('sctf-'+d),cc,PALACCENT(),DEV[d].w,Math.round(window.innerHeight*0.56),120);
   });
-  document.getElementById('scCopy').addEventListener('click',function(){document.getElementById('trayCopy').click();
-    var b=this;b.textContent='✓ Copied';setTimeout(function(){b.textContent='📋 Copy all as one'},2000)});
-  requestAnimationFrame(draw);
-});
+}
+/* scroll every visible preview frame to the start of section i */
+function jumpTo(i){
+  var ids=scRoots[i];if(!ids||!ids.length)return;
+  document.querySelectorAll('#scVp iframe').forEach(function(fr){
+    var el=fr.contentDocument&&fr.contentDocument.getElementById('brxe-'+ids[0]);
+    if(el)fr.contentWindow.scrollTo({top:el.offsetTop,behavior:'smooth'});
+  });
+}
+document.getElementById('tbCart').addEventListener('click',openCreator);
 function refreshCardTools(){
   document.querySelectorAll('.card').forEach(function(c){
     var id=c.dataset.id,f=c.querySelector('.ctool.fav'),k=c.querySelector('.addsc');
