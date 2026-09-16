@@ -332,6 +332,10 @@ input{font-family:inherit}
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
       <input id="q" type="search" placeholder="Search recipes…" autocomplete="off">
     </div>
+    <div class="navcap">Account</div>
+    <div class="catnav" style="gap:3px">
+      <button class="catlink" id="navAcct"><span class="ico">☁️</span><span id="navAcctName">Sign in to sync</span></button>
+    </div>
     <div class="navcap">Workspace</div>
     <div class="catnav" style="gap:3px">
       <button class="catlink" id="navBrand"><span class="ico">🎨</span>Brand Presets<span class="cnt" id="brandCnt">0</span></button>
@@ -6369,6 +6373,7 @@ CLOUD=(function(){
     var n=document.getElementById('tbAcctName'),d=document.getElementById('tbAcctDot');
     if(!n)return;
     n.textContent=!ON?'Browser only':user?(user.email||'Signed in'):'Sign in to sync';
+    var sn=document.getElementById('navAcctName');if(sn)sn.textContent=n.textContent;
     d.className='sdot '+(user?state:'');
     d.parentNode.title=msg;
   }
@@ -6501,6 +6506,7 @@ document.getElementById('tbSwap').addEventListener('click',openSwap);
 document.getElementById('tbCmd').addEventListener('click',cmdOpen);
 document.getElementById('tbExport').addEventListener('click',openIO);
 document.getElementById('tbAcct').addEventListener('click',openAcct);
+document.getElementById('navAcct').addEventListener('click',openAcct);
 document.getElementById('navBrand').addEventListener('click',openBrand);
 document.getElementById('navSwap').addEventListener('click',openSwap);
 document.getElementById('navIngest').addEventListener('click',openIngest);
