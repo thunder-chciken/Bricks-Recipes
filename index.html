@@ -5175,6 +5175,8 @@ var LPV=(function(){
       applyS(el,s,e.name,_pushHover);
       if(s._cssCustom)injectCss(el,s._cssCustom);
       applyS(el,s,e.name,_pushHover);
+      /* Bricks caps containers at max-width:100%, so a fixed container width never overflows the viewport */
+      if(e.name==='container'&&s._width&&!s._widthMax)el.style.maxWidth='100%';
       if(_hoverCss){ccount++;var hcls='lpvh'+ccount;el.classList.add(hcls);cssBuf.push('.'+hcls+':hover{'+_hoverCss+'}')}
       var _cl=ELCLS(s);if(_cl)_cl.split(/\s+/).forEach(function(c){if(c)el.classList.add(c)});
       el.id='brxe-'+e.id;el.classList.add('brxe-'+e.name);
