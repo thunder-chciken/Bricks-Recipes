@@ -5222,6 +5222,12 @@ var LPV=(function(){
       if(el.classList.contains('bpf-flip-back'))el.style.setProperty('display','none','important');
       if(s._lpvHide)el.style.setProperty('display','none','important');
       if(s._cssCustom)injectCss(el,s._cssCustom);
+      /* real Bricks entrance animations: enterView/startAnimation interactions or the native _animation control */
+      var _ia=(s._interactions||[]).filter(function(x){return x&&x.trigger==='enterView'&&x.action==='startAnimation'&&x.animationType&&(!x.target||x.target==='self')})[0];
+      if(_ia){el.setAttribute('data-lpv-anim',_ia.animationType);if(_ia.animationDuration)el.setAttribute('data-lpv-dur',_ia.animationDuration);if(_ia.animationDelay)el.setAttribute('data-lpv-delay',_ia.animationDelay)}
+      else if(s._animation&&e.name!=='toggle'){el.setAttribute('data-lpv-anim',s._animation);
+        if(s._animationDurationCustom)el.setAttribute('data-lpv-dur',s._animationDurationCustom);
+        if(s._animationDelay)el.setAttribute('data-lpv-delay',s._animationDelay)}
       if(e.name!=='form')(e.children||[]).forEach(function(cid){var c=byId[cid];if(!c)return;
         /* Query loops render N times in the preview (posts_per_page, capped), each with
            different sample data — so the card reads like a real listing, not one item */
@@ -5236,14 +5242,9 @@ var LPV=(function(){
     var root=dv('lpvroot');root.style.cssText='width:100%;position:relative;font-family:Inter,sans-serif';
     var topIdx=0;
     content.forEach(function(e){if(!e.parent||e.parent===0){var node=make(e);
-      /* WYSIWYG entrance: gentle staggered fade-up so the preview feels alive, not static */
-      node.style.animation='lpvEnter .5s cubic-bezier(.22,.61,.36,1) both';
-      node.style.animationDelay=(topIdx*0.09)+'s';topIdx++;
       root.appendChild(node)}});
     cssBuf.push('.lpvroot *,.lpvroot *::before,.lpvroot *::after{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}');
     cssBuf.push('@media (prefers-reduced-motion:reduce){.lpvroot *,.lpvroot *::before,.lpvroot *::after{animation:none!important}}');
-    cssBuf.push('@keyframes lpvEnter{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}');
-    cssBuf.push('@media (prefers-reduced-motion:reduce){[style*=lpvEnter]{animation:none!important}}');
     if(cssBuf.length){var st=document.createElement('style');st.textContent=cssBuf.join('\n');root.appendChild(st)}
     return root}
 })();
@@ -5874,7 +5875,9 @@ var state=null;
 
 function openSheet(r){
   var m=RMETA[r.id]||{variants:[{v:'default',t:'Default'}],notes:[]};
-  state={r:r,m:m,v:m.variants[0].v,dev:'desktop',accent:'#5b8cff',radius:'16',width:'default',layout:'h'};
+  state={r:r,m:m,v:m.variants[0].v,dev:'desktop',accent:'#5b8cff',radius:'16',width:'default',layout:'h',anim:null};
+  buildDoc();
+  var animLocked=VERBATIM[r.id]||HASANIM(GENS[r.id](state.v,{accent:state.accent,radius:state.radius}).content);
   var pills=m.variants.map(function(vv,i){return '<button class="vpill'+(i===0?' on':'')+'" data-v="'+vv.v+'">'+vv.t+'</button>'}).join('');
   var notes=GLOBAL_NOTES.concat(m.notes||[]).map(function(n){return '<li>'+n+'</li>'}).join('');
   var rows=(r.steps||[]).map(function(s){return '<tr><td>'+s[0]+'</td><td>'+s[1]+'</td><td>'+s[2]+'</td></tr>'}).join('');
@@ -5899,6 +5902,9 @@ function openSheet(r){
           '<label>Corners<select id="oRadius"><option value="0">Sharp</option><option value="8">Soft</option><option value="16" selected>Rounded</option><option value="24">Extra</option></select></label>'+
           '<label>Width<select id="oWidth"><option value="default">Recipe default</option><option value="1200px">1200px</option><option value="1400px">1400px</option><option value="full">Full-width</option></select></label>'+
           '<label>Layout<select id="oLayout"><option value="h">Horizontal</option><option value="v">Vertical · stacked</option></select></label>'+
+          '<label>Entrance<select id="oAnim"'+(animLocked?' disabled title="'+(VERBATIM[r.id]?'Pasted exactly as captured from a live site':'This recipe has its own animations')+'"':'')+'>'+
+            (animLocked?'<option>'+(VERBATIM[r.id]?'Captured as-is':'Built into recipe')+'</option>':ENTRANCES.map(function(a){return '<option value="'+a[0]+'"'+(a[0]===state.anim?' selected':'')+'>'+a[1]+'</option>'}).join(''))+
+          '</select></label>'+
         '</div></div>'+
         '<button class="copybtn" id="copyBtn">📋 Copy Bricks JSON</button>'+
         '<div class="rowbtns"><button class="pbtn ghost" id="sheetCart" style="flex:1">'+(inCart(r.id)?'\u2713 In Section Creator':'\ud83e\udde9 Add to Section Creator')+'</button>'+
@@ -5932,6 +5938,7 @@ function openSheet(r){
   document.getElementById('oRadius').addEventListener('change',function(){state.radius=this.value;renderVP()});
   document.getElementById('oWidth').addEventListener('change',function(){state.width=this.value;renderVP()});
   document.getElementById('oLayout').addEventListener('change',function(){state.layout=this.value;renderVP()});
+  document.getElementById('oAnim').addEventListener('change',function(){state.anim=this.value;renderVP()});
   document.getElementById('copyBtn').addEventListener('click',doCopy);
   document.getElementById('sheetCart').addEventListener('click',function(){
     SCTOGGLE(r.id,state.v);
@@ -5944,14 +5951,45 @@ function openSheet(r){
 function buildDoc(){
   var doc=GENS[state.r.id](state.v,{accent:state.accent,radius:state.radius});
   DECORATE(state.r.id,doc);
+  if(state.anim===null)state.anim=ANIMFOR(state.r.id,doc);
+  ENTRANCE(doc.content,state.anim);
   if(state.layout==='v')VERTICALIZE(doc.content);
   APPLYWIDTH(doc.content,state.width);
   return doc;
+}
+/* ---------- entrance animations ----------
+   Written as native Bricks interactions (enterView -> startAnimation) so they carry over on paste and
+   stay editable under Interactions. Sections animate their direct children (usually the container),
+   so section backgrounds stay put. */
+var ENTRANCES=[['fadeInUp','Fade up'],['fadeIn','Fade in'],['fadeInLeft','Fade from left'],['fadeInRight','Fade from right'],['zoomIn','Zoom in'],['none','None']];
+function HASANIM(content){return content.some(function(e){var s=e.settings||{};
+  return !!s._animation&&e.name!=='toggle'||(s._interactions||[]).some(function(x){return x&&x.action==='startAnimation'})})}
+function ANIMFOR(id,doc){
+  if(VERBATIM[id]||HASANIM(doc.content))return 'none';
+  var cat=CATS.filter(function(c){return c.ids.indexOf(id)>-1})[0];
+  return cat&&(cat.id==='headers'||cat.id==='footers')?'none':'fadeInUp';
+}
+function ENTRANCE(content,type){
+  if(!type||type==='none')return;
+  var byId={},used={};
+  content.forEach(function(e){byId[e.id]=e;((e.settings||{})._interactions||[]).forEach(function(x){used[x.id]=1})});
+  function uid(){var u;do{u=(Math.random().toString(36).slice(2)+'000000').slice(0,6)}while(used[u]||byId[u]);used[u]=1;return u}
+  content.forEach(function(e){
+    if(e.parent&&e.parent!==0)return;
+    var targets=e.name==='section'?(e.children||[]).map(function(c){return byId[c]}).filter(Boolean):[e];
+    targets.forEach(function(t){
+      t.settings=t.settings||{};var list=t.settings._interactions||[];
+      if(list.some(function(x){return x.action==='startAnimation'}))return;
+      t.settings._interactions=list.concat([{id:uid(),trigger:'enterView',action:'startAnimation',
+        animationType:type,animationDuration:'0.8s',animationDelay:'0s',runOnce:true}]);
+    });
+  });
 }
 /* one recipe -> decorated doc, used by cards, cart and the palette */
 function docFor(id,v,opts){
   var doc=GENS[id](v||'default',opts||{accent:PALACCENT(),radius:PALRADIUS()});
   DECORATE(id,doc);
+  ENTRANCE(doc.content,ANIMFOR(id,doc));
   return doc;
 }
 function PALACCENT(){var p=activePreset();return p?p.accent:'#5b8cff'}
@@ -5979,6 +6017,25 @@ function pvBaseCss(){
   return PVBASE;
 }
 /* Mount content into a scaled iframe inside host. capPx is the max on-screen height. */
+/* Mirrors bricks.min.js: "In" animations start hidden (data-interaction-hidden-on-load), and on
+   entering the viewport get .brx-animated + .brx-animate-<type>, the configured duration and delay,
+   then the animation class is removed on animationend. */
+function PVANIMATE(fr){
+  var doc=fr.contentDocument,win=fr.contentWindow,els=doc.querySelectorAll('[data-lpv-anim]');
+  if(!els.length||!win.IntersectionObserver)return;
+  function ms(v){v=String(v||'');return v.indexOf('ms')>-1?parseInt(v,10):v.indexOf('s')>-1?parseFloat(v)*1000:0}
+  function play(n){
+    var t=n.getAttribute('data-lpv-anim');
+    setTimeout(function(){
+      n.removeAttribute('data-interaction-hidden-on-load');
+      var d=n.getAttribute('data-lpv-dur');if(d)n.style.animationDuration=d;
+      n.classList.add('brx-animated','brx-animate-'+t);n.setAttribute('data-animation',t);
+      n.addEventListener('animationend',function(){n.classList.remove('brx-animate-'+t);n.removeAttribute('data-animation');n.style.animationDuration=''},{once:true});
+    },ms(n.getAttribute('data-lpv-delay')));
+  }
+  var io=new win.IntersectionObserver(function(entries){entries.forEach(function(en){if(!en.isIntersecting)return;io.unobserve(en.target);play(en.target)})});
+  els.forEach(function(n){if(/In/.test(n.getAttribute('data-lpv-anim')))n.setAttribute('data-interaction-hidden-on-load','');io.observe(n)});
+}
 function PVFRAME(host,box,content,accent,W,capPx,minPx){
   host.innerHTML='';
   var sc=(box.clientWidth||600)/W;
@@ -5989,9 +6046,10 @@ function PVFRAME(host,box,content,accent,W,capPx,minPx){
   host.appendChild(fr);
   var doc=fr.contentDocument;
   doc.open();
-  doc.write('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width='+W+'"><style>'+pvBaseCss()+'</style></head><body></body></html>');
+  doc.write('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width='+W+'"><link rel="stylesheet" href="assets/bricks-animate.css"><style>'+pvBaseCss()+'</style></head><body class="bricks-is-frontend"></body></html>');
   doc.close();
   doc.body.appendChild(doc.adoptNode(LPV(content,accent)));
+  PVANIMATE(fr);
   function fit(){
     if(!fr.isConnected)return;
     var h=doc.body.scrollHeight;
@@ -6753,7 +6811,7 @@ window.__BR={CATS:CATS,BYID:BYID,CURATED:CURATED,APPLYBP:APPLYBP,FLATTENMEDIA:FL
   STORE:STORE,LINT:LINT,RECOLOR:RECOLOR,SWAP:SWAP,DECORATE:DECORATE,docFor:docFor,contrast:contrast,
   presets:presets,activePreset:activePreset,swapCfg:swapCfg,cart:cart,cartAdd:cartAdd,favs:favs,toggleFav:toggleFav,
   customs:customs,registerCustoms:registerCustoms,syncBrandUI:syncBrandUI,syncSwapUI:syncSwapUI,renderCart:renderCart,
-  faqSchema:faqSchema,localBizSchema:localBizSchema,VERBATIM:VERBATIM,cmdFill:cmdFill,renderPinned:renderPinned,CLOUD:CLOUD,SCCOMBINE:SCCOMBINE};
+  faqSchema:faqSchema,localBizSchema:localBizSchema,VERBATIM:VERBATIM,cmdFill:cmdFill,renderPinned:renderPinned,CLOUD:CLOUD,SCCOMBINE:SCCOMBINE,ANIMFOR:ANIMFOR,GENS:GENS};
 })();
 </script>
 </body>
