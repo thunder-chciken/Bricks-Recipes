@@ -3587,13 +3587,20 @@ function FLIPCSS(radius){
      the touch fallback (position:static + margin-top) stack the faces on every device.
      Anything breakpoint-specific must be done with native Bricks breakpoint settings
      (e.g. '_display:mobile_portrait') on the elements themselves, not here. */
-  return '%root%{perspective:1200px;background:transparent}'+
-    '%root% .bpf-flip-inner{position:relative;display:grid;width:100%;height:100%;min-height:100%;'+
-      'transform-style:preserve-3d;transition:transform .7s cubic-bezier(.2,.7,.3,1)}'+
-    '%root%:hover .bpf-flip-inner,%root%:focus-within .bpf-flip-inner{transform:rotateY(180deg)}'+
+  /* card is a grid so the flipper stretches to the card's min-height (height:100% of a
+     min-height parent resolves to auto). cursor:pointer makes iOS apply :hover on tap;
+     tabindex=0 on the card (_attributes) lets tap/keyboard focus flip it elsewhere.
+     Front gets an explicit rotateY(0): Safari ignores backface-visibility on an
+     untransformed face and shows the mirrored front over the back. */
+  return '%root%{display:grid;-webkit-perspective:1200px;perspective:1200px;background:transparent;cursor:pointer;outline:none}'+
+    '%root% .bpf-flip-inner{position:relative;display:grid;grid-template-columns:1fr;width:100%;min-height:100%;'+
+      '-webkit-transform-style:preserve-3d;transform-style:preserve-3d;transition:transform .7s cubic-bezier(.2,.7,.3,1)}'+
+    '%root%:hover .bpf-flip-inner,%root%:focus .bpf-flip-inner,%root%:focus-within .bpf-flip-inner{-webkit-transform:rotateY(180deg);transform:rotateY(180deg)}'+
     '%root% .bpf-flip-face{grid-area:1/1;width:100%;height:100%;'+
       '-webkit-backface-visibility:hidden;backface-visibility:hidden;border-radius:'+radius+'px}'+
-    '%root% .bpf-flip-back{transform:rotateY(180deg)}';
+    '%root% .bpf-flip-front{-webkit-transform:rotateY(0deg);transform:rotateY(0deg)}'+
+    '%root% .bpf-flip-back{-webkit-transform:rotateY(180deg);transform:rotateY(180deg)}'+
+    '%root%:focus-visible .bpf-flip-face{box-shadow:0 0 0 3px rgba(91,140,255,.55)}';
 }
 GENS['flip-cards']=function(v,opts){var P=PAL(opts),d=new BricksDoc();
   var n=v==='4up'?4:3;
@@ -3608,7 +3615,8 @@ GENS['flip-cards']=function(v,opts){var P=PAL(opts),d=new BricksDoc();
     '_gridTemplateColumns:tablet_portrait':'repeat(2, 1fr)','_gridTemplateColumns:mobile_portrait':'1fr','_gridGap:mobile_portrait':'16'});
   var rad=String(Math.max(Number(P.r)||16,12));
   cards.slice(0,n).forEach(function(c){
-    var card=DIV(d,grid,{_heightMin:'300px',_cssCustom:FLIPCSS(rad)},'\u21bb Flip Card');
+    var card=DIV(d,grid,{_heightMin:'300px',_cssCustom:FLIPCSS(rad),
+      _attributes:[{id:d.uid(),name:'tabindex',value:'0'}]},'\u21bb Flip Card');
     /* _display/_gridTemplateColumns are set NATIVELY as well as in the Custom CSS above:
        native settings survive independently, so the two faces still overlap in one grid
        cell even if the Custom CSS is altered or fails to apply. */
@@ -5235,7 +5243,6 @@ var LPV=(function(){
       var _cl=ELCLS(s);if(_cl)_cl.split(/\s+/).forEach(function(c){if(c)el.classList.add(c)});
       el.id='brxe-'+e.id;el.classList.add('brxe-'+e.name);
       if(el.classList.contains('brx-dropdown-content'))el.style.setProperty('display','none','important');
-      if(el.classList.contains('bpf-flip-back'))el.style.setProperty('display','none','important');
       if(s._lpvHide)el.style.setProperty('display','none','important');
       if(s._cssCustom)injectCss(el,s._cssCustom);
       /* real Bricks entrance animations: enterView/startAnimation interactions or the native _animation control */
