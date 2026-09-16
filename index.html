@@ -202,6 +202,9 @@ input{font-family:inherit}
 .tbtn:hover{color:var(--txt);border-color:var(--ac)}
 .tbtn.on{background:var(--grad);border-color:transparent;color:#06101f}
 .tbtn .bdot{width:12px;height:12px;border-radius:4px;border:1px solid rgba(255,255,255,.3)}
+.tbtn .sdot{width:8px;height:8px;border-radius:50%;background:var(--mut2)}
+.tbtn .sdot.ok{background:var(--ok)}.tbtn .sdot.busy{background:var(--warn)}.tbtn .sdot.err{background:#f87171}
+.fld input[type=email]{height:38px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--txt);font-size:13px;padding:0 11px;outline:none;font-family:inherit}
 .tbtn .kbd{font-family:var(--mono);font-size:10px;opacity:.6;border:1px solid var(--line2);border-radius:4px;padding:1px 4px}
 .cartcount{background:var(--ac);color:#06101f;border-radius:999px;min-width:19px;height:19px;display:inline-flex;
   align-items:center;justify-content:center;font-size:10.5px;font-weight:800;padding:0 5px}
@@ -315,6 +318,8 @@ input{font-family:inherit}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
 .lpvroot,.lpvroot *,.lpvroot *::before,.lpvroot *::after{animation:none!important;transition:none!important}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -352,6 +357,7 @@ input{font-family:inherit}
       <button class="tbtn" id="tbCart">🧺 Section cart <span class="cartcount" id="tbCartN">0</span></button>
       <button class="tbtn" id="tbCmd">⌘K <span class="kbd">search</span></button>
       <button class="tbtn" id="tbExport">⇪ Export / Import</button>
+      <button class="tbtn" id="tbAcct"><span class="sdot" id="tbAcctDot"></span><span id="tbAcctName">Sign in to sync</span></button>
     </div>
     <div id="pinned"></div>
     <div id="cats"></div>
@@ -5325,12 +5331,16 @@ CATS.forEach(function(c){
 var VERBATIM={'service-area':1,'hdr-bighaul':1,'blog-single-flow':1};
 
 /* ---------- storage (degrades to memory when localStorage is blocked) ---------- */
-var MEM={};
+var MEM={},CLOUD=null;
 var STORE={
   get:function(k,d){try{var v=localStorage.getItem('br.'+k);return v?JSON.parse(v):(MEM[k]!==undefined?MEM[k]:d)}
     catch(e){return MEM[k]!==undefined?MEM[k]:d}},
-  set:function(k,v){MEM[k]=v;try{localStorage.setItem('br.'+k,JSON.stringify(v))}catch(e){}},
-  all:function(){var o={};['presets','activePreset','swap','favs','recent','custom','cart'].forEach(function(k){o[k]=STORE.get(k,null)});return o}
+  set:function(k,v){STORE.local(k,v);if(CLOUD&&STORE.keys.indexOf(k)>-1)CLOUD.queue(k,v)},
+  /* local-only writes: used when applying data pulled from the cloud */
+  local:function(k,v){MEM[k]=v;try{localStorage.setItem('br.'+k,JSON.stringify(v))}catch(e){}},
+  drop:function(k){delete MEM[k];try{localStorage.removeItem('br.'+k)}catch(e){}},
+  keys:['presets','activePreset','swap','favs','recent','custom','cart'],
+  all:function(){var o={};STORE.keys.forEach(function(k){o[k]=STORE.get(k,null)});return o}
 };
 
 /* ---------- color helpers ---------- */
@@ -6321,7 +6331,7 @@ function openIO(){
     '<button class="pbtn ghost" id="ioCopy">Copy to clipboard</button></div>'+
     '<div class="fld"><label>Import \u2014 paste a workspace JSON here</label><textarea id="ioIn" placeholder=\'{"presets":[...],"custom":[...]}\'></textarea></div>'+
     '<div class="rowbtns"><button class="pbtn" id="ioImp">Import &amp; merge</button></div>'+
-    '<div class="hint">Everything lives in this browser only. Export before switching machines or clearing site data.</div>');
+    '<div class="hint">'+(CLOUD&&CLOUD.user()?'Signed in \u2014 your workspace syncs to your account automatically.':'Not signed in \u2014 everything lives in this browser only. Sign in to sync, or export before switching machines.')+'</div>');
   document.getElementById('ioExp').addEventListener('click',function(){
     var blob=new Blob([JSON.stringify(STORE.all(),null,2)],{type:'application/json'});
     var a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -6345,11 +6355,152 @@ function openIO(){
   });
 }
 
+/* ---------- cloud sync (Supabase, per-user) ----------
+   localStorage stays the synchronous cache every read uses. When signed in,
+   writes are debounced up to the user_state table and the account is pulled
+   down on sign-in. Browser data from before first sign-in is merged into the
+   account; after that the account is the source of truth. */
+CLOUD=(function(){
+  var cfg=window.BR_SUPABASE||{},sb=null,user=null,timers={},pending={},state='off',msg='',pulling=false;
+  var ON=!!(cfg.url&&cfg.anonKey&&window.supabase&&window.supabase.createClient);
+  function same(a,b){return JSON.stringify(a)===JSON.stringify(b)}
+  function setState(s,m){state=s;msg=m||'';paint()}
+  function paint(){
+    var n=document.getElementById('tbAcctName'),d=document.getElementById('tbAcctDot');
+    if(!n)return;
+    n.textContent=!ON?'Browser only':user?(user.email||'Signed in'):'Sign in to sync';
+    d.className='sdot '+(user?state:'');
+    d.parentNode.title=msg;
+  }
+  function refreshUI(){registerCustoms();syncBrandUI();syncSwapUI();renderCart();renderPinned()}
+  /* union arrays (by id for objects), remote first; scalars/objects: remote wins */
+  function merge(k,local,remote){
+    if(local===null||local===undefined)return remote;
+    if(k==='recent'||!Array.isArray(local)||!Array.isArray(remote))return remote;
+    var out=remote.slice(),seen={};
+    function key(x){return JSON.stringify(x&&typeof x==='object'&&x.id!==undefined?x.id:x)}
+    out.forEach(function(x){seen[key(x)]=1});
+    local.forEach(function(x){if(!seen[key(x)]){seen[key(x)]=1;out.push(x)}});
+    return out;
+  }
+  function apply(k,v){if(v===null||v===undefined)STORE.drop(k);else STORE.local(k,v)}
+  function pull(){
+    if(!sb||!user||pulling)return;
+    pulling=true;setState('busy','Syncing…');
+    var uid=user.id;
+    sb.from('user_state').select('key,value').then(function(r){
+      pulling=false;
+      if(!user||user.id!==uid)return;
+      if(r.error){setState('err','Sync failed: '+r.error.message);return}
+      var remote={};(r.data||[]).forEach(function(row){remote[row.key]=row.value});
+      var guest=!STORE.get('__owner',null);
+      STORE.keys.forEach(function(k){
+        var local=STORE.get(k,null),has=Object.prototype.hasOwnProperty.call(remote,k);
+        if(has&&!guest)apply(k,remote[k]);
+        else if(has){var m=merge(k,local,remote[k]);apply(k,m);if(!same(m,remote[k]))queue(k,m)}
+        else if(local!==null&&local!==undefined)queue(k,local);
+      });
+      STORE.local('__owner',uid);
+      refreshUI();
+      if(!Object.keys(pending).length)setState('ok','Synced');
+    });
+  }
+  function queue(k,v){
+    if(!sb||!user)return;
+    pending[k]=v;clearTimeout(timers[k]);
+    timers[k]=setTimeout(function(){flush(k)},700);
+    setState('busy','Saving…');
+  }
+  function flush(k){
+    clearTimeout(timers[k]);
+    if(!Object.prototype.hasOwnProperty.call(pending,k)||!user)return Promise.resolve();
+    var v=pending[k];delete pending[k];
+    return sb.from('user_state').upsert({user_id:user.id,key:k,value:v===undefined?null:v,updated_at:new Date().toISOString()},
+      {onConflict:'user_id,key'}).then(function(r){
+        if(r.error){setState('err','Save failed: '+r.error.message);return}
+        if(!Object.keys(pending).length&&!pulling)setState('ok','Saved');
+      });
+  }
+  function flushAll(){return Promise.all(Object.keys(pending).map(flush))}
+  function redirect(){return location.origin+location.pathname}
+  function init(){
+    paint();
+    if(!ON)return;
+    sb=window.supabase.createClient(cfg.url,cfg.anonKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+    sb.auth.onAuthStateChange(function(ev,session){
+      var u=session&&session.user||null,was=user&&user.id;
+      user=u;
+      if(!u){setState('off','');return}
+      paint();
+      /* defer: supabase calls inside this callback can deadlock the auth lock */
+      if(u.id!==was)setTimeout(pull,0);
+    });
+    document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')flushAll()});
+    window.addEventListener('pagehide',flushAll);
+  }
+  return {
+    init:init,queue:queue,pull:pull,flushAll:flushAll,
+    enabled:function(){return ON},user:function(){return user},status:function(){return {state:state,msg:msg}},
+    sendLink:function(email){return sb.auth.signInWithOtp({email:email,options:{emailRedirectTo:redirect()}})},
+    google:function(){return sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:redirect()}})},
+    signOut:function(){
+      return flushAll().then(function(){return sb.auth.signOut()}).then(function(){
+        /* don't leave this account's workspace on a shared machine */
+        STORE.keys.forEach(STORE.drop);STORE.drop('__owner');location.reload();
+      });
+    }
+  };
+})();
+
+function escA(x){return String(x).replace(/[&<>"']/g,function(c){return '&#'+c.charCodeAt(0)+';'})}
+function openAcct(){
+  if(!CLOUD.enabled()){
+    openPanel('☁ Account','Cloud sync is not configured.',
+      '<div class="hint">Add your Supabase <b>url</b> and <b>anonKey</b> to <b>config.js</b> to enable sign-in. '+
+      'Until then everything is saved in this browser only.</div>');
+    return;
+  }
+  var u=CLOUD.user();
+  if(u){
+    var st=CLOUD.status();
+    openPanel('☁ Account','Your workspace syncs to your account on every device you sign in to.',
+      '<div class="hint">Signed in as <b>'+escA(u.email||u.id)+'</b>'+(st.msg?' · '+escA(st.msg):'')+'</div>'+
+      '<div class="rowbtns"><button class="pbtn" id="acSync">Sync now</button>'+
+      '<button class="pbtn ghost" id="acOut">Sign out</button></div>'+
+      '<div class="hint">Signing out clears this browser’s copy. Your data stays safe in your account.</div>');
+    document.getElementById('acSync').addEventListener('click',function(){
+      var b=this;CLOUD.flushAll().then(CLOUD.pull);b.textContent='✓ Syncing';setTimeout(function(){b.textContent='Sync now'},1800)});
+    document.getElementById('acOut').addEventListener('click',function(){this.textContent='Signing out…';CLOUD.signOut()});
+    return;
+  }
+  openPanel('☁ Sign in','Save presets, favorites, your library and cart to your account.',
+    '<div class="fld"><label>Email</label><input type="email" id="acEmail" placeholder="you@example.com" autocomplete="email"></div>'+
+    '<div class="rowbtns"><button class="pbtn" id="acLink">Email me a sign-in link</button>'+
+    '<button class="pbtn ghost" id="acGoogle">Continue with Google</button></div>'+
+    '<div class="hint" id="acMsg">No password needed. Anything already saved in this browser is merged into your account the first time you sign in.</div>');
+  var m=document.getElementById('acMsg');
+  function send(){
+    var b=document.getElementById('acLink'),e=document.getElementById('acEmail').value.trim();
+    if(!/^\S+@\S+\.\S+$/.test(e)){m.textContent='Enter a valid email address.';return}
+    b.disabled=true;b.textContent='Sending…';
+    CLOUD.sendLink(e).then(function(r){
+      b.disabled=false;b.textContent='Email me a sign-in link';
+      m.textContent=r.error?'✕ '+r.error.message:'✓ Check '+e+' for your sign-in link. Open it in this browser.';
+    });
+  }
+  document.getElementById('acLink').addEventListener('click',send);
+  document.getElementById('acEmail').addEventListener('keydown',function(ev){if(ev.key==='Enter')send()});
+  document.getElementById('acGoogle').addEventListener('click',function(){
+    CLOUD.google().then(function(r){if(r.error)m.textContent='✕ '+r.error.message});
+  });
+}
+
 /* ---------- toolbar + sidebar wiring ---------- */
 document.getElementById('tbBrand').addEventListener('click',openBrand);
 document.getElementById('tbSwap').addEventListener('click',openSwap);
 document.getElementById('tbCmd').addEventListener('click',cmdOpen);
 document.getElementById('tbExport').addEventListener('click',openIO);
+document.getElementById('tbAcct').addEventListener('click',openAcct);
 document.getElementById('navBrand').addEventListener('click',openBrand);
 document.getElementById('navSwap').addEventListener('click',openSwap);
 document.getElementById('navIngest').addEventListener('click',openIngest);
@@ -6362,13 +6513,14 @@ syncBrandUI();
 syncSwapUI();
 renderCart();
 renderPinned();
+CLOUD.init();
 
 /* test hooks */
 window.__BR={CATS:CATS,BYID:BYID,CURATED:CURATED,APPLYBP:APPLYBP,FLATTENMEDIA:FLATTENMEDIA,openSheet:openSheet,DEV:DEV,
   STORE:STORE,LINT:LINT,RECOLOR:RECOLOR,SWAP:SWAP,DECORATE:DECORATE,docFor:docFor,contrast:contrast,
   presets:presets,activePreset:activePreset,swapCfg:swapCfg,cart:cart,cartAdd:cartAdd,favs:favs,toggleFav:toggleFav,
   customs:customs,registerCustoms:registerCustoms,syncBrandUI:syncBrandUI,syncSwapUI:syncSwapUI,renderCart:renderCart,
-  faqSchema:faqSchema,localBizSchema:localBizSchema,VERBATIM:VERBATIM,cmdFill:cmdFill,renderPinned:renderPinned};
+  faqSchema:faqSchema,localBizSchema:localBizSchema,VERBATIM:VERBATIM,cmdFill:cmdFill,renderPinned:renderPinned,CLOUD:CLOUD};
 })();
 </script>
 </body>
