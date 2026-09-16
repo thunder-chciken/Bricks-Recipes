@@ -64,6 +64,15 @@ input{font-family:inherit}
 .main{padding:34px 40px 90px;min-width:0}
 @media(max-width:960px){.main{padding:24px 18px 70px}}
 .hero{margin-bottom:34px}
+/* US time zones strip */
+.tzbar{display:grid;grid-template-columns:repeat(auto-fill,minmax(102px,1fr));gap:6px;margin:-10px 0 26px}
+.tz{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 11px;display:flex;flex-direction:column;gap:2px}
+.tz .tzn{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--mut2);white-space:nowrap}
+.tz .tzt{font-size:15.5px;font-weight:800;color:var(--txt);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tz .tzt small{font-size:11px;font-weight:700;color:var(--mut);margin-left:4px}
+.tz .tzd{font-size:10.5px;color:var(--mut2);white-space:nowrap}
+.tz.here{border-color:rgba(91,140,255,.55);background:linear-gradient(135deg,rgba(91,140,255,.14),rgba(56,182,255,.06))}
+.tz.here .tzn{color:#9db9ff}
 .hero .eyebrow{font-size:11.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;
   background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
 .hero h2{font-size:clamp(26px,3.4vw,38px);font-weight:800;letter-spacing:-.03em;line-height:1.08}
@@ -363,6 +372,7 @@ button.x:hover{color:#fff;border-color:var(--ac);transform:rotate(90deg)}
     <div class="side-foot">Native <b style="color:var(--txt)">bricksCopiedElements</b> JSON.<br>Copy → paste in Bricks with nothing selected.</div>
   </aside>
   <main class="main">
+    <div class="tzbar" id="tzbar" aria-label="Current time in US time zones"></div>
     <header class="hero">
       <div class="eyebrow">Curated Library</div>
       <h2>Every section you need.<br>Nothing you don't.</h2>
@@ -6806,6 +6816,33 @@ document.getElementById('navSwap').addEventListener('click',openSwap);
 document.getElementById('navIngest').addEventListener('click',openIngest);
 document.getElementById('navDoctor').addEventListener('click',openDoctor);
 document.getElementById('navLib').addEventListener('click',openLib);
+
+/* ---------- US time zones ---------- */
+var USTZ=[
+  ['Hawaii','Pacific/Honolulu'],['Alaska','America/Anchorage'],['Pacific','America/Los_Angeles'],
+  ['Mountain','America/Denver'],['Arizona','America/Phoenix'],['Central','America/Chicago'],
+  ['Eastern','America/New_York'],['Atlantic','America/Puerto_Rico'],['Samoa','Pacific/Pago_Pago','SST'],['Chamorro','Pacific/Guam','ChST']
+];
+function renderTZ(){
+  var bar=document.getElementById('tzbar');if(!bar)return;
+  var now=new Date(),mine='';
+  try{mine=Intl.DateTimeFormat().resolvedOptions().timeZone}catch(e){}
+  var myOffset=-now.getTimezoneOffset();
+  bar.innerHTML=USTZ.map(function(z){
+    var t,ab,day,here;
+    try{
+      var parts=new Intl.DateTimeFormat('en-US',{timeZone:z[1],hour:'numeric',minute:'2-digit',timeZoneName:'short',weekday:'short'}).formatToParts(now);
+      var get=function(k){var p=parts.filter(function(x){return x.type===k})[0];return p?p.value:''};
+      t=get('hour')+':'+get('minute')+' '+get('dayPeriod');ab=z[2]||get('timeZoneName');day=get('weekday');
+      var loc=new Date(now.toLocaleString('en-US',{timeZone:z[1]})),utc=new Date(now.toLocaleString('en-US',{timeZone:'UTC'}));
+      here=mine===z[1]||(!USTZ.some(function(x){return x[1]===mine})&&Math.round((loc-utc)/60000)===myOffset&&z[0]!=='Arizona');
+    }catch(e){return ''}
+    return '<div class="tz'+(here?' here':'')+'" title="'+z[1]+(here?' \u00b7 your time zone':'')+'">'+
+      '<span class="tzn">'+z[0]+'</span><span class="tzt">'+t+'<small>'+ab+'</small></span><span class="tzd">'+day+'</span></div>';
+  }).join('');
+}
+renderTZ();
+setTimeout(function(){renderTZ();setInterval(renderTZ,60000)},(60-new Date().getSeconds())*1000+50);
 
 /* ---------- boot ---------- */
 registerCustoms();
