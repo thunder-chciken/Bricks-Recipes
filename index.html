@@ -115,9 +115,9 @@ input{font-family:inherit}
 .sheet-top{display:flex;align-items:flex-start;gap:16px;padding:22px 26px 18px;border-bottom:1px solid var(--line)}
 .sheet-top h3{font-size:21px;font-weight:800;letter-spacing:-.02em}
 .sheet-top .blurb{font-size:13.5px;color:var(--mut);margin-top:5px;line-height:1.55;max-width:760px}
-.x{margin-left:auto;width:38px;height:38px;border-radius:11px;background:var(--panel);border:1px solid var(--line2);
+button.x{margin-left:auto;width:38px;height:38px;border-radius:11px;background:var(--panel);border:1px solid var(--line2);
   display:flex;align-items:center;justify-content:center;font-size:17px;color:var(--mut);transition:all .2s;flex-shrink:0}
-.x:hover{color:#fff;border-color:var(--ac);transform:rotate(90deg)}
+button.x:hover{color:#fff;border-color:var(--ac);transform:rotate(90deg)}
 .sheet-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr);gap:0}
 @media(max-width:900px){.sheet-grid{grid-template-columns:1fr}}
 .pv-side{padding:20px 24px 26px;border-right:1px solid var(--line);min-width:0}
@@ -4938,6 +4938,9 @@ function RESOLVEGC(content,globalClasses){
 }
 
 var LPV=(function(){
+  /* one sequence for every render: cached card previews keep their <style> in the
+     page, so per-render counters made .lpvcss5 from one recipe hit another */
+  var ccount=0;
   function dv(cls){var d=document.createElement('div');if(cls)d.className=cls;return d}
   function colorCss(c){return c?(c.hex||c.raw||''):''}
   function isNum(v){return /^-?\d+(\.\d+)?$/.test(String(v))}
@@ -5017,7 +5020,7 @@ var LPV=(function(){
   }
   return function(content,accent){
     var byId={};content.forEach(function(e){byId[e.id]=e});
-    var cssBuf=[],ccount=0;
+    var cssBuf=[];
     function injectCss(el,css){ccount++;var cls='lpvcss'+ccount;el.classList.add(cls);
       var _c=String(css);
       cssBuf.push(_c.indexOf('%root%')>-1?_c.split('%root%').join('.'+cls):_c);
