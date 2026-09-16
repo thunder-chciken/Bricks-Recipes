@@ -422,8 +422,36 @@ BricksDoc.prototype.json=function(){
       drop.push(k)}}
     for(k in add)s[k]=add[k];
     for(var i=0;i<drop.length;i++)delete s[drop[i]]});
+  CENTERFIX(this.content);
   AUTOLABEL(this.content);
   return{content:this.content,source:'bricksCopiedElements',sourceUrl:'https://gobig.design',version:'2.3.6',globalClasses:[],globalElements:[]}};
+/* Bricks' frontend CSS gives .brxe-container and .brxe-block align-items:flex-start, and a
+   .brxe-div no width at all. So a wrapper that centers its own children (or centered text) placed
+   in one of them shrink-wraps and hugs the left edge on the live site. When the parent leaves
+   align-items at the default and the child has no explicit width or align-self, center the child
+   itself. Explicit alignment and fixed-size boxes (icon tiles etc.) are left as authored. */
+function CENTERFIX(content){
+  var byId={};content.forEach(function(e){byId[e.id]=e});
+  function column(e){var s=e.settings||{};
+    if(e.name==='container'||e.name==='block'||e.name==='section')return s._direction!=='row';
+    return s._display==='flex'&&s._direction==='column'}
+  function row(e){var s=e.settings||{};
+    if(e.name==='container'||e.name==='block'||e.name==='section')return s._direction==='row';
+    return s._display==='flex'&&s._direction!=='column'}
+  content.forEach(function(e){
+    var s=e.settings,p=byId[e.parent];
+    if(!s||!p||!p.settings)return;
+    if(p.name==='section'||p.settings._alignItems||!column(p))return;
+    if(p.name==='div'&&p.settings._display!=='flex')return;
+    if(s._alignSelf)return;
+    /* a div with a max width but no width is meant to fill up to that max; in Bricks it shrink-wraps instead */
+    if(e.name==='div'&&s._widthMax&&!s._width)s._width='100%';
+    if(s._width&&s._width!=='100%')return;
+    var centered=(s._typography&&s._typography['text-align']==='center')||
+      (s._alignItems==='center'&&column(e))||(s._justifyContent==='center'&&row(e));
+    if(centered)s._alignSelf='center';
+  });
+}
 /* Structure-panel labels (schema 2.3 `label` field on the element envelope).
    Names sections/cards after their own heading text so a pasted layout is navigable. */
 function AUTOLABEL(content){
@@ -4950,6 +4978,8 @@ var LPV=(function(){
   function isNum(v){return /^-?\d+(\.\d+)?$/.test(String(v))}
   function px(v){return isNum(v)?v+'px':String(v)}
   function dim(v){var m=/^(\d+(?:\.\d+)?)vh$/.exec(String(v));return m?Math.round(parseFloat(m[1])/100*620)+'px':px(v)}
+  function sides(st,prop,o){['top','right','bottom','left'].forEach(function(k){var v=o[k];if(v===undefined||v===null||v==='')return;
+    st[prop+k.charAt(0).toUpperCase()+k.slice(1)]=v==='auto'?'auto':px(v)})}
   function sp(o){if(!o)return '';return [o.top,o.right,o.bottom,o.left].map(function(x){return x==='auto'?'auto':px(x||0)}).join(' ')}
   function grad(g){var cs=(g.stops||g.colors||[]).map(function(x){return colorCss(x.color)});if(cs.length===1)cs.push(cs[0]);return 'linear-gradient('+(g.angle||180)+'deg,'+cs.join(',')+')'}
   var ICONS=[['chevron-left','‹'],['chevron-right','›'],['arrow-left','‹'],['arrow-right','›'],['phone','✆'],['envelope','✉'],['map-marker','◆'],['facebook','f'],['instagram','◎'],['linkedin','in'],['twitter','t'],['star','★'],['pencil','✎'],['code','‹/›'],['chart','▲'],['bullhorn','◄)'],['tools','✚'],['mobile','▯']];
@@ -4985,8 +5015,8 @@ var LPV=(function(){
     if(s._flexShrink)st.flexShrink=s._flexShrink;
     if(s._flexBasis)st.flexBasis=px(s._flexBasis);
     if(s._alignSelf)st.alignSelf=s._alignSelf;
-    if(s._padding)st.padding=sp(s._padding);
-    if(s._margin)st.margin=sp(s._margin);
+    if(s._padding)sides(st,'padding',s._padding);
+    if(s._margin)sides(st,'margin',s._margin);
     if(s._width)st.width=px(s._width);
     if(s._widthMax)st.maxWidth=px(s._widthMax);
     if(s._widthMin)st.minWidth=px(s._widthMin);
@@ -5101,9 +5131,11 @@ var LPV=(function(){
           var _tg=(s.tag&&/^(ul|ol|nav|a|article|aside|figure|span)$/.test(s.tag))?s.tag:'div';
           el=document.createElement(_tg);
           if(_tg==='ul'||_tg==='ol'){el.style.listStyle='none';el.style.margin='0';el.style.padding='0'}
-          if(e.name==='section'){el.style.display='flex';el.style.flexDirection='column';el.style.width='100%';el.style.minWidth='0';if(!s._background)el.style.background='#fff'}
-          else if(e.name==='container'){el.style.display='flex';el.style.flexDirection='column';el.style.width='100%';el.style.maxWidth='960px';el.style.marginLeft='auto';el.style.marginRight='auto';el.style.paddingLeft='20px';el.style.paddingRight='20px';el.style.minWidth='0'}
-          else if(e.name==='block'){el.style.display='flex';el.style.flexDirection='column';el.style.width='100%';el.style.minWidth='0'}
+          /* layout defaults mirror Bricks frontend CSS (themes/bricks/assets/css/frontend-layer.min.css):
+             section centers its children, container and block align them to the start, div has no layout */
+          if(e.name==='section'){el.style.display='flex';el.style.flexDirection='column';el.style.alignItems='center';el.style.width='100%';el.style.minWidth='0';if(!s._background)el.style.background='#fff'}
+          else if(e.name==='container'){el.style.display='flex';el.style.flexDirection='column';el.style.alignItems='flex-start';el.style.width='1100px';el.style.maxWidth='100%';el.style.marginLeft='auto';el.style.marginRight='auto';el.style.minWidth='0'}
+          else if(e.name==='block'){el.style.display='flex';el.style.flexDirection='column';el.style.alignItems='flex-start';el.style.width='100%';el.style.minWidth='0'}
           else{el.style.minWidth='0'}
           break;}
         case 'heading':el=dv('');el.innerHTML=DYN(s.text||'');el.style.fontWeight='700';el.style.overflowWrap='break-word';el.style.minWidth='0';break;
@@ -5181,6 +5213,8 @@ var LPV=(function(){
       applyS(el,s,e.name,_pushHover);
       /* Bricks caps containers at max-width:100%, so a fixed container width never overflows the viewport */
       if(e.name==='container'&&s._width&&!s._widthMax)el.style.maxWidth='100%';
+      /* sites that cap containers with a max width (theme styles) run them at width:100% up to that cap */
+      if(e.name==='container'&&s._widthMax&&!s._width)el.style.width='100%';
       if(_hoverCss){ccount++;var hcls='lpvh'+ccount;el.classList.add(hcls);cssBuf.push('.'+hcls+':hover{'+_hoverCss+'}')}
       var _cl=ELCLS(s);if(_cl)_cl.split(/\s+/).forEach(function(c){if(c)el.classList.add(c)});
       el.id='brxe-'+e.id;el.classList.add('brxe-'+e.name);
