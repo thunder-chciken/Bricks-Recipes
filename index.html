@@ -5854,7 +5854,7 @@ function openSheet(r){
           '<button class="replay" id="replay">↻ Replay animations</button>'+
         '</div>'+
         '<div class="viewport" id="vp"><div class="vp-in" id="vpIn"></div></div>'+
-        '<div class="pv-cap" id="pvCap">True-to-paste preview · breakpoint settings & media queries applied per device</div>'+
+        '<div class="pv-cap" id="pvCap">Isolated preview at true device width · hover, sticky & media queries live</div>'+
       '</div>'+
       '<div class="opt-side">'+
         (m.variants.length>1?'<div class="opt-block"><h5>Variant</h5><div class="vpills" id="vpills">'+pills+'</div></div>':'')+
@@ -5882,7 +5882,7 @@ function openSheet(r){
     var b=e.target.closest('button[data-d]');if(!b)return;
     state.dev=b.dataset.d;
     this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});
-    document.getElementById('dim').textContent=DEV[state.dev].w+'px';
+    document.getElementById('dim').textContent=state.dev==='all'?'1200 · 768 · 390px':DEV[state.dev].w+'px';
     renderVP();
   });
   var vp2=document.getElementById('vpills');
@@ -5922,10 +5922,61 @@ function docFor(id,v,opts){
 function PALACCENT(){var p=activePreset();return p?p.accent:'#5b8cff'}
 function PALRADIUS(){var p=activePreset();return p&&p.radius?p.radius:'16'}
 
+/* Sealed preview frame: each large preview renders inside its own same-origin
+   iframe at the true device width, then the iframe is scaled to fit. Recipe CSS
+   can't leak in or out, @media queries resolve against a real viewport, and
+   hover / sticky / fixed positioning / internal scrolling behave like a browser. */
+var PVBASE=null;
+function pvBaseCss(){
+  if(PVBASE!==null)return PVBASE;
+  var out=[];
+  try{Array.prototype.forEach.call(document.styleSheets,function(sh){
+    Array.prototype.forEach.call(sh.cssRules||[],function(r){
+      if(r.selectorText&&/\.lpv-/.test(r.selectorText))out.push(r.cssText);
+    });
+  })}catch(e){}
+  PVBASE=':root{--sans:'+(getComputedStyle(document.documentElement).getPropertyValue('--sans')||'Inter,sans-serif')+'}'+
+    '*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}'+
+    'html,body{background:#fff;color:#0b1226;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}'+
+    'img,svg,video{max-width:100%}'+
+    'html{scrollbar-width:thin}'+
+    out.join('\n');
+  return PVBASE;
+}
+/* Mount content into a scaled iframe inside host. capPx is the max on-screen height. */
+function PVFRAME(host,box,content,accent,W,capPx,minPx){
+  host.innerHTML='';
+  var sc=(box.clientWidth||600)/W;
+  var fr=document.createElement('iframe');
+  fr.setAttribute('title','Recipe preview');
+  fr.style.cssText='display:block;border:0;background:#fff;width:'+W+'px;height:'+Math.round(capPx/sc)+'px';
+  host.style.width=W+'px';host.style.transform='scale('+sc+')';
+  host.appendChild(fr);
+  var doc=fr.contentDocument;
+  doc.open();
+  doc.write('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width='+W+'"><style>'+pvBaseCss()+'</style></head><body></body></html>');
+  doc.close();
+  doc.body.appendChild(doc.adoptNode(LPV(content,accent)));
+  function fit(){
+    if(!fr.isConnected)return;
+    var h=doc.body.scrollHeight;
+    var fh=Math.min(Math.max(h,minPx/sc),capPx/sc);
+    fr.style.height=Math.round(fh)+'px';
+    box.style.height=Math.round(fh*sc)+'px';
+  }
+  fit();
+  var RO=fr.contentWindow&&fr.contentWindow.ResizeObserver;
+  if(RO)new RO(fit).observe(doc.body);
+  else fr.contentWindow.addEventListener('load',fit);
+  return fr;
+}
+
 function renderVP(){
   var vp=document.getElementById('vp'),host=document.getElementById('vpIn');
-  if(!vp||!host||!state)return;
+  if(!vp||!state)return;
   if(state.dev==='all'){return renderTrip(vp)}
+  /* coming back from the all-three view, which replaces the viewport contents */
+  if(!host){vp.innerHTML='<div class="vp-in" id="vpIn"></div>';host=document.getElementById('vpIn')}
   vp.style.background='#fff';vp.style.border='';
   vp.classList.add('swap');
   requestAnimationFrame(function(){
@@ -5936,15 +5987,8 @@ function renderVP(){
       var content=JSON.parse(JSON.stringify(_j.content));
       RESOLVEGC(content,_j.globalClasses);
       APPLYBP(content,state.dev);
-      host.innerHTML='';
-      host.appendChild(LPV(content,state.accent));
-      requestAnimationFrame(function(){DEGLITCH(host)});
-      var W=DEV[state.dev].w;host.style.width=W+'px';
-      var bw=vp.clientWidth||600,sc=bw/W;
-      host.style.transform='scale('+sc+')';
-      var h=host.offsetHeight*sc,cap=Math.round(window.innerHeight*0.62);
-      vp.style.height=Math.min(Math.max(h,140),cap)+'px';
-      vp.style.overflowY=h>cap?'auto':'hidden';
+      vp.style.overflowY='hidden';
+      PVFRAME(host,vp,content,state.accent,DEV[state.dev].w,Math.round(window.innerHeight*0.62),140);
     }catch(err){
       host.style.transform='none';host.style.width='auto';
       host.innerHTML='<div style="padding:20px;font:600 13px var(--sans);color:#b91c1c">Preview error: '+err.message+'</div>';
@@ -5969,13 +6013,8 @@ function renderTrip(vp){
     if(!host)return;
     var c=JSON.parse(JSON.stringify(base));
     APPLYBP(c,d);
-    host.innerHTML='';host.appendChild(LPV(c,state.accent));
-    var w=DEV[d].w,sc=(frame.clientWidth||col)/w;
-    host.style.width=w+'px';host.style.transform='scale('+sc+')';
-    requestAnimationFrame(function(){DEGLITCH(host)});
-    var hh=host.offsetHeight*sc,cap=Math.round(window.innerHeight*0.52);
-    frame.style.height=Math.min(Math.max(hh,120),cap)+'px';
-    frame.style.overflowY=hh>cap?'auto':'hidden';
+    frame.style.overflowY='hidden';
+    PVFRAME(host,frame,c,state.accent,DEV[d].w,Math.round(window.innerHeight*0.52),120);
   });
 }
 
