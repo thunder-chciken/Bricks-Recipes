@@ -6458,6 +6458,9 @@ CLOUD=(function(){
 })();
 
 function escA(x){return String(x).replace(/[&<>"']/g,function(c){return '&#'+c.charCodeAt(0)+';'})}
+/* Google sign-in is wired up but hidden until the Google provider is enabled in Supabase
+   (Authentication > Providers). Flip to true to show the button again. */
+var SHOW_GOOGLE=false;
 function openAcct(){
   if(!CLOUD.enabled()){
     openPanel('☁ Account','Cloud sync is not configured.',
@@ -6481,7 +6484,7 @@ function openAcct(){
   openPanel('☁ Sign in','Save presets, favorites, your library and cart to your account.',
     '<div class="fld"><label>Email</label><input type="email" id="acEmail" placeholder="you@example.com" autocomplete="email"></div>'+
     '<div class="rowbtns"><button class="pbtn" id="acLink">Email me a sign-in link</button>'+
-    '<button class="pbtn ghost" id="acGoogle">Continue with Google</button></div>'+
+    (SHOW_GOOGLE?'<button class="pbtn ghost" id="acGoogle">Continue with Google</button>':'')+'</div>'+
     '<div class="hint" id="acMsg">No password needed. Anything already saved in this browser is merged into your account the first time you sign in.</div>');
   var m=document.getElementById('acMsg');
   function send(){
@@ -6495,7 +6498,7 @@ function openAcct(){
   }
   document.getElementById('acLink').addEventListener('click',send);
   document.getElementById('acEmail').addEventListener('keydown',function(ev){if(ev.key==='Enter')send()});
-  document.getElementById('acGoogle').addEventListener('click',function(){
+  if(SHOW_GOOGLE)document.getElementById('acGoogle').addEventListener('click',function(){
     CLOUD.google().then(function(r){if(r.error)m.textContent='✕ '+r.error.message});
   });
 }
