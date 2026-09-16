@@ -1065,9 +1065,9 @@ GENS['hdr-transparent']=function(v,opts){var P=PAL(opts),d=new BricksDoc();
 function MARQUEE_CODE(gold){return '<div class="mq-scope">\n'+
 '<style>\n'+
 '.mq-scope{--mq-gold:'+gold+';--mq-fs:14px;--mq-icon:22px;--mq-gap:56px;--mq-speed:40s;width:100%;overflow:hidden;background:transparent}\n'+
-'.mq-scope .mq-track{display:flex;width:max-content;animation:mq-scroll var(--mq-speed) linear infinite}\n'+
+'.mq-scope .mq-track{display:flex;flex-wrap:nowrap;width:max-content;min-width:200%;animation:mq-scroll var(--mq-speed) linear infinite}\n'+
 '.mq-scope:hover .mq-track{animation-play-state:paused}\n'+
-'.mq-scope .mq-group{display:flex;align-items:center;gap:var(--mq-gap);padding-right:var(--mq-gap)}\n'+
+'.mq-scope .mq-group{display:flex;flex:1 0 auto;justify-content:space-around;align-items:center;gap:var(--mq-gap);padding-right:var(--mq-gap)}\n'+
 '.mq-scope .mq-item{display:inline-flex;align-items:center;gap:12px;color:#fff;font-size:var(--mq-fs);font-weight:600;letter-spacing:.2px;white-space:nowrap;flex:0 0 auto}\n'+
 '.mq-scope .mq-dot{width:8px;height:8px;border-radius:999px;background:var(--mq-gold);flex:0 0 auto}\n'+
 '@keyframes mq-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}\n'+
@@ -1155,14 +1155,16 @@ GENS['hdr-marquee']=function(v,opts){var P=PAL(opts),d=new BricksDoc();
        which Bricks applies without any code signature. */
     var scope=DIV(d,mcon,{_cssCustom:
       '%root%{width:100%;overflow:hidden;background:transparent}'+
-      '%root% .mq-track{display:flex;width:max-content;animation:mq-scroll 40s linear infinite}'+
+      /* track is a Bricks Block (column + wrap by default) and every brxe element is max-width:100%:
+         force one row, uncap it, and make it at least 2x the band so each group spans edge to edge */
+      '%root% .mq-track{display:flex;flex-direction:row;flex-wrap:nowrap;width:max-content;min-width:200%;max-width:none;animation:mq-scroll 40s linear infinite}'+
       '%root%:hover .mq-track{animation-play-state:paused}'+
-      '%root% .mq-group{display:flex;align-items:center;gap:56px;padding-right:56px}'+
+      '%root% .mq-group{display:flex;flex:1 0 auto;justify-content:space-around;align-items:center;gap:56px;padding-right:56px;max-width:none}'+
       '%root% .mq-item{display:inline-flex;align-items:center;gap:12px;color:#fff;font-size:14px;font-weight:600;letter-spacing:.2px;white-space:nowrap;flex:0 0 auto}'+
       '%root% .mq-dot{width:8px;height:8px;border-radius:999px;background:'+GOLD+';flex:0 0 auto}'+
       '@keyframes mq-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}'
     },'Marquee');
-    var track=BLK(d,scope,{_hidden:{_cssClasses:'mq-track'}},'Track');
+    var track=BLK(d,scope,{_direction:'row',_flexWrap:'nowrap',_hidden:{_cssClasses:'mq-track'}},'Track');
     var MQ=['Lorem ipsum dolor sit amet','Consectetur adipiscing elit','Sed do eiusmod tempor','Incididunt ut labore et dolore'];
     /* two identical groups \u2014 the -50% keyframe makes the loop seamless */
     [0,1].forEach(function(gi){
@@ -1357,14 +1359,17 @@ function RVL(delay,anim,dur){ /* native Bricks interaction: animate on scroll in
 /* ---- Scrolling Marquee ---- */
 function MARQTRACK(d,p,builder){ /* two identical tracks = seamless loop */
   for(var t=0;t<2;t++){
-    var tr=DIV(d,p,{_cssClasses:'bpf-track',_display:'flex',_alignItems:'center',_columnGap:'48',_flexShrink:'0'});
+    var tr=DIV(d,p,{_cssClasses:'bpf-track',_display:'flex',_direction:'row',_flexWrap:'nowrap',_alignItems:'center',_justifyContent:'space-around',_columnGap:'48',_flexShrink:'0',_widthMin:'100%',_widthMax:'none'});
     builder(tr);
   }}
 function MARQCSS(P,dur,reverse){
-  return '%root%{display:flex;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}'+
-  '%root% .bpf-track{padding-right:48px;animation:bpfMarquee '+dur+'s linear infinite'+(reverse?' reverse':'')+'}'+
+  /* A Bricks Block is flex-direction:column + flex-wrap:wrap by default, which stacked the two tracks into two rows.
+     Force one non-wrapping row; each track is at least as wide as the band so the loop is seamless and edge to edge.
+     max-width:none overrides Bricks' global [class*=brxe-]{max-width:100%}, which squeezed tracks to the viewport on phones. */
+  return '%root%{display:flex;flex-direction:row;flex-wrap:nowrap;width:100%;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}'+
+  '%root% .bpf-track{display:flex;flex-wrap:nowrap;flex-shrink:0;min-width:100%;max-width:none;padding-right:48px;animation:bpfMarquee '+dur+'s linear infinite'+(reverse?' reverse':'')+'}'+
   '%root%:hover .bpf-track{animation-play-state:paused}'+
-  '@keyframes bpfMarquee{to{transform:translateX(-100%)}}'}
+  '@keyframes bpfMarquee{from{transform:translateX(0)}to{transform:translateX(-100%)}}'}
 GENS.marquee=function(v,opts){var P=PAL(opts),d=new BricksDoc();
   var items=[['fas fa-shield-alt','Licensed & Insured'],['fas fa-star','5-Star Rated'],['fas fa-clock','Same-Day Service'],
              ['fas fa-tools','Free Estimates'],['fas fa-map-marker-alt','Serving North Texas'],['fas fa-thumbs-up','Satisfaction Guaranteed']];
@@ -1377,18 +1382,18 @@ GENS.marquee=function(v,opts){var P=PAL(opts),d=new BricksDoc();
   if(v==='logos'){
     var s1=SEC(d,{bg:P.white,py:36});
     T(d,s1.con,'Trusted by teams at',TY({s:'12.5px',w:700,c:P.muted,a:'center',ls:'0.08em',tt:'uppercase'}),{_margin:MRG(0,0,20,0)});
-    var m=BLK(d,s1.con,{_cssCustom:MARQCSS(P,30)},'\u221e Marquee');
+    var m=BLK(d,s1.con,{_direction:'row',_flexWrap:'nowrap',_width:'100%',_cssCustom:MARQCSS(P,30)},'\u221e Marquee');
     MARQTRACK(d,m,logoRow);
     return d}
   if(v==='dual'){
     var s2=d.el('section',0,{_padding:PAD(28,0),_background:{color:HX(P.navy)},_overflow:'hidden'},'Dual Marquee Band');
-    var m1=d.el('block',s2,{_cssCustom:MARQCSS(P,26),_margin:MRG(0,0,18,0)},'\u221e Marquee \u2192');
+    var m1=d.el('block',s2,{_direction:'row',_flexWrap:'nowrap',_width:'100%',_cssCustom:MARQCSS(P,26),_margin:MRG(0,0,18,0)},'\u221e Marquee \u2192');
     MARQTRACK(d,m1,function(tr){iconPills(tr,true)});
-    var m2=d.el('block',s2,{_cssCustom:MARQCSS(P,26,true)},'\u221e Marquee \u2190');
+    var m2=d.el('block',s2,{_direction:'row',_flexWrap:'nowrap',_width:'100%',_cssCustom:MARQCSS(P,26,true)},'\u221e Marquee \u2190');
     MARQTRACK(d,m2,function(tr){iconPills(tr,true)});
     return d}
   var s3=d.el('section',0,{_padding:PAD(20,0),_background:{color:HX(P.navy)},_overflow:'hidden'},'Marquee Band');
-  var m3=d.el('block',s3,{_cssCustom:MARQCSS(P,28)},'\u221e Marquee');
+  var m3=d.el('block',s3,{_direction:'row',_flexWrap:'nowrap',_width:'100%',_cssCustom:MARQCSS(P,28)},'\u221e Marquee');
   MARQTRACK(d,m3,function(tr){iconPills(tr,true)});
   return d};
 
@@ -5965,7 +5970,7 @@ function buildDoc(){
    so section backgrounds stay put. */
 var ENTRANCES=[['fadeInUp','Fade up'],['fadeIn','Fade in'],['fadeInLeft','Fade from left'],['fadeInRight','Fade from right'],['zoomIn','Zoom in'],['none','None']];
 function HASANIM(content){return content.some(function(e){var s=e.settings||{};
-  return !!s._animation&&e.name!=='toggle'||(s._interactions||[]).some(function(x){return x&&x.action==='startAnimation'})})}
+  return !!s._animation&&e.name!=='toggle'||/animation\s*:[^;}]*infinite/.test(s._cssCustom||'')||(s._interactions||[]).some(function(x){return x&&x.action==='startAnimation'})})}
 function ANIMFOR(id,doc){
   if(VERBATIM[id]||HASANIM(doc.content))return 'none';
   var cat=CATS.filter(function(c){return c.ids.indexOf(id)>-1})[0];
@@ -6014,6 +6019,8 @@ function pvBaseCss(){
     '*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}'+
     'html,body{background:#fff;color:#0b1226;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}'+
     'img,svg,video{max-width:100%}'+
+    /* Bricks frontend: every element is capped at its parent's width */
+    '[class*="brxe-"]{max-width:100%}'+
     'html{scrollbar-width:thin}'+
     out.join('\n');
   return PVBASE;
