@@ -105,8 +105,9 @@ input{font-family:inherit}
 .addsc:hover{background:var(--grad);border-color:transparent;color:#06101f}
 .addsc.in{background:rgba(52,211,153,.14);border-color:rgba(52,211,153,.45);color:var(--ok)}
 .addsc.in:hover{background:rgba(248,113,113,.14);border-color:rgba(248,113,113,.45);color:#fca5a5}
-.card .go{margin-left:6px;font-size:12px;font-weight:700;color:var(--ac2);opacity:0;transform:translateX(-5px);transition:all .25s var(--ease)}
-.card:hover .go{opacity:1;transform:none}
+.card .go:hover{text-decoration:underline}
+.card .go{margin-left:6px;font-size:12px;font-weight:700;color:var(--ac2);opacity:.55;white-space:nowrap;transition:all .25s var(--ease)}
+.card:hover .go{opacity:1}
 .nores{display:none;padding:60px 20px;text-align:center;color:var(--mut)}
 .nores b{display:block;font-size:17px;color:var(--txt);margin-bottom:6px}
 
@@ -5808,9 +5809,10 @@ function makeCard(r,i){
     '<div class="card-meta">'+
       (r.isNew?'<span class="chip new">NEW</span>':'')+
       (m.variants.length>1?'<span class="chip v">'+m.variants.length+' variants</span>':'')+
-      SCBTN(r.id)+'<span class="go">Open →</span>'+
+      SCBTN(r.id)+'<span class="go" role="button" tabindex="0" title="Open Section Creator">Open →</span>'+
     '</div></div>';
   c.addEventListener('click',function(ev){
+    if(ev.target.closest('.go')){ev.stopPropagation();openCreator();return}
     var a=ev.target.closest('.addsc');
     if(a){ev.stopPropagation();SCTOGGLE(r.id,'default');return}
     var t=ev.target.closest('.ctool');
